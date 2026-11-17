@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>3D ブロックパズル</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:radial-gradient(circle at 50% 30%,#2a3550 0%,#141a2a 70%,#0b0f1a 100%);
+    font-family:system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;color:#fff;
+    touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+  canvas{display:block}
+  #hud{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-start;
+    padding:calc(10px + env(safe-area-inset-top)) 12px 0;pointer-events:none}
+  .stats{display:flex;gap:14px}
+  .stat small{display:block;font-size:10px;letter-spacing:.1em;color:#9fb0cc}
+  .stat b{font-size:20px;font-variant-numeric:tabular-nums}
+  .top-btns{display:flex;gap:6px;pointer-events:auto}
+  .pill{font:inherit;font-size:12px;border:0;border-radius:999px;padding:7px 11px;background:rgba(255,255,255,.12);color:#fff;cursor:pointer}
+  .pill.on{background:#ffd21f;color:#1d2733;font-weight:700}
+  #next{position:fixed;top:calc(62px + env(safe-area-inset-top));right:12px;font-size:10px;letter-spacing:.1em;color:#9fb0cc;text-align:center}
+  #next canvas{display:block;margin-top:2px;width:64px;height:64px}
+  #pad{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:space-between;align-items:flex-end;
+    padding:0 14px calc(14px + env(safe-area-inset-bottom))}
+  .cross{display:grid;grid-template-columns:repeat(3,48px);grid-template-rows:repeat(3,48px);gap:4px}
+  .b{font:inherit;border:0;border-radius:14px;background:rgba(255,255,255,.14);color:#fff;font-size:20px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;padding:0;touch-action:none}
+  .b:active{background:rgba(255,255,255,.3)}
+  .rot{display:grid;grid-template-columns:repeat(2,58px);gap:6px}
+  .rot .b{height:48px;font-size:12px;flex-direction:column;line-height:1.1}
+  .rot .b span{font-size:19px}
+  .drop{grid-column:span 2;background:linear-gradient(135deg,#ff8a3d,#ffd21f)!important;color:#1d2733!important;font-weight:800;font-size:15px!important}
+  #msg{position:fixed;left:0;right:0;top:38%;text-align:center;font-size:34px;font-weight:900;color:#ffd21f;
+    text-shadow:0 4px 20px rgba(255,210,31,.6);pointer-events:none;opacity:0;transition:opacity .2s, transform .6s;transform:translateY(0)}
+  #msg.show{opacity:1;transform:translateY(-20px)}
+  .overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,14,24,.7);
+    backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);z-index:10}
+  .overlay.hidden{display:none}
+  .card{background:#fff;color:#1d2733;border-radius:22px;padding:26px 22px;max-width:330px;width:88%;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.4)}
+  .card h1{margin:0 0 8px;font-size:23px}
+  .card p{margin:8px 0;font-size:13.5px;line-height:1.7;color:#4a5868}
+  .card ul{text-align:left;font-size:13px;line-height:1.8;color:#4a5868;padding-left:18px;margin:8px 0}
+  .big{font:inherit;margin-top:12px;font-size:17px;font-weight:800;padding:13px 32px;border:0;border-radius:999px;cursor:pointer;
+    background:linear-gradient(135deg,#ff8a3d,#ffd21f);color:#1d2733;box-shadow:0 6px 18px rgba(255,160,40,.45)}
+  .diffs{display:flex;gap:6px;margin-top:10px}
+  .dbtn{flex:1;font:inherit;font-size:13px;font-weight:700;border:2px solid #e3e8ef;background:#fff;color:#1d2733;border-radius:12px;padding:8px 2px;cursor:pointer}
+  .dbtn small{display:block;font-size:9.5px;font-weight:400;color:#7a8898;margin-top:2px}
+  .dbtn.sel{border-color:#ff8a3d;background:#fff6ec}
+  #note{font-size:12px;color:#c0392b;min-height:1em}
+</style>
+</head>
+<body>
+<div id="hud">
+  <div class="stats">
+    <div class="stat"><small>SCORE</small><b id="score">0</b></div>
+    <div class="stat"><small>LEVEL</small><b id="level">1</b></div>
+    <div class="stat"><small>段</small><b id="lines">0</b></div>
+  </div>
+  <div class="top-btns">
+    <button class="pill" id="tiltBtn">傾き OFF</button>
+    <button class="pill" id="calBtn">水平リセット</button>
+    <button class="pill" id="pauseBtn">⏸</button>
+  </div>
+</div>
+<div id="next">NEXT<canvas id="nextCv" width="128" height="128"></canvas></div>
+<div id="msg"></div>
+
+<div id="pad">
+  <div class="cross">
+    <div></div><button class="b" data-mv="0,1" aria-label="奥へ">▲</button><div></div>
+    <button class="b" data-mv="-1,0" aria-label="左へ">◀</button><div></div><button class="b" data-mv="1,0" aria-label="右へ">▶</button>
+    <div></div><button class="b" data-mv="0,-1" aria-label="手前へ">▼</button><div></div>
+  </div>
+  <div class="rot">
+    <button class="b" data-rot="yaw"><span>⟳</span>水平</button>
+    <button class="b" data-rot="pitch"><span>⤾</span>前後</button>
+    <button class="b" data-rot="roll"><span>⟲</span>左右</button>
+    <button class="b" data-rot="yawr"><span>⟲</span>水平逆</button>
+    <button class="b drop" id="dropBtn">⬇ 落とす</button>
+  </div>
+</div>
+
+<div class="overlay" id="startOv">
+  <div class="card">
+    <h1>3D ブロックパズル</h1>
+    <p>落ちてくる立体ブロックを積んで、<b>1段（5×5）をすき間なく埋める</b>と消えます。</p>
+    <ul>
+      <li>スマホを<b>傾ける</b> → ブロックが前後左右に移動</li>
+      <li>右下のボタン → 回転・落とす</li>
+      <li>画面をドラッグ → 視点を回す</li>
+      <li>PC：矢印キーで移動、Q/W/Eで回転、スペースで落とす</li>
+    </ul>
+    <div class="diffs" id="diffs">
+      <button class="dbtn sel" data-d="easy">やさしい<small>4×4・小さいブロック</small></button>
+      <button class="dbtn" data-d="normal">ふつう<small>5×5</small></button>
+      <button class="dbtn" data-d="hard">むずかしい<small>5×5・立体ブロック</small></button>
+    </div>
+    <button class="big" id="startBtn">スタート</button>
+    <p id="note"></p>
+  </div>
+</div>
+<div class="overlay hidden" id="pauseOv">
+  <div class="card"><h1>一時停止中</h1><button class="big" id="resumeBtn">つづける</button></div>
+</div>
+<div class="overlay hidden" id="overOv">
+  <div class="card">
+    <h1>ゲームオーバー</h1>
+    <p id="finalScore" style="font-size:22px;font-weight:800;color:#1d2733"></p>
+    <p id="bestScore"></p>
+    <button class="big" id="retryBtn">もう一度</button><br>
+    <button class="pill" id="menuBtn" style="background:#eef1f5;color:#1d2733;margin-top:10px">難易度を変える</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(() => {
+  const D2R = Math.PI / 180;
+  let W = 4, D = 4, HT = 12;              // 穴の広さと高さ（難易度で変わる）
+  const COLORS = [0xffd21f, 0x34c759, 0x8a5cd6, 0xff8a3d, 0x2f7bff, 0xf0333f, 0x22c7d6, 0xff6fb5, 0xa3e635, 0x60a5fa];
+  // 立体ブロック（ポリキューブ）
+  const SHAPES = [
+    [[-1,0,0],[0,0,0],[1,0,0],[2,0,0]],   // I
+    [[0,0,0],[1,0,0],[0,0,1],[1,0,1]],    // O
+    [[-1,0,0],[0,0,0],[1,0,0],[1,0,1]],   // L
+    [[-1,0,0],[0,0,0],[1,0,0],[0,0,1]],   // T
+    [[-1,0,0],[0,0,0],[0,0,1],[1,0,1]],   // S
+    [[0,0,0],[1,0,0],[0,0,1],[0,1,0]],    // 三脚（立体）
+    [[0,0,0],[1,0,0],[0,1,0],[0,1,1]],    // ねじれ（立体）
+    [[0,0,0],[1,0,0]],                    // 2個
+    [[-1,0,0],[0,0,0],[1,0,0]],           // 3個まっすぐ
+    [[0,0,0],[1,0,0],[0,0,1]],            // 3個L
+  ];
+  // 難易度
+  const DIFFS = {
+    easy:   { label: 'やさしい',   w: 4, h: 12, shapes: [7, 8, 9, 1, 0, 3], fall: 1.6, minFall: 0.45, step: 0.05, per: 5, th: 0.24 },
+    normal: { label: 'ふつう',     w: 5, h: 12, shapes: [7, 8, 9, 0, 1, 2, 3, 4], fall: 1.3, minFall: 0.25, step: 0.08, per: 4, th: 0.22 },
+    hard:   { label: 'むずかしい', w: 5, h: 12, shapes: [0, 1, 2, 3, 4, 5, 6], fall: 1.1, minFall: 0.15, step: 0.1, per: 3, th: 0.2 },
+  };
+  let diff = DIFFS.easy;
+
+  // ---------- three.js ----------
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 200);
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight);
+  document.body.prepend(renderer.domElement);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x445066, 0.75));
+  const dl = new THREE.DirectionalLight(0xffffff, 0.8); dl.position.set(4, 14, 8); scene.add(dl);
+
+  const world = new THREE.Group(); scene.add(world);
+  const toWorld = (x, y, z) => new THREE.Vector3(x - W / 2 + 0.5, y + 0.5, z - D / 2 + 0.5);
+
+  // 透明ケース（穴）
+  let wellGroup = null;
+  function buildWell() {
+    if (wellGroup) world.remove(wellGroup);
+    const g = new THREE.Group();
+    const lineMat = new THREE.LineBasicMaterial({ color: 0x7f93b8, transparent: true, opacity: 0.35 });
+    const pts = [];
+    const x0 = -W / 2, x1 = W / 2, z0 = -D / 2, z1 = D / 2;
+    for (let i = 0; i <= W; i++) { pts.push(x0 + i, 0, z0, x0 + i, 0, z1); }
+    for (let k = 0; k <= D; k++) { pts.push(x0, 0, z0 + k, x1, 0, z0 + k); }
+    for (let y = 1; y <= HT; y++) {
+      pts.push(x0, y, z0, x1, y, z0, x1, y, z0, x1, y, z1, x1, y, z1, x0, y, z1, x0, y, z1, x0, y, z0);
+    }
+    for (let i = 0; i <= W; i++) { pts.push(x0 + i, 0, z0, x0 + i, HT, z0); pts.push(x0 + i, 0, z1, x0 + i, HT, z1); }
+    for (let k = 1; k < D; k++) { pts.push(x0, 0, z0 + k, x0, HT, z0 + k); pts.push(x1, 0, z0 + k, x1, HT, z0 + k); }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    g.add(new THREE.LineSegments(geo, lineMat));
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D),
+      new THREE.MeshStandardMaterial({ color: 0x1e2840, roughness: 0.9 }));
+    floor.rotation.x = -Math.PI / 2; floor.position.y = -0.01;
+    g.add(floor);
+    const glass = new THREE.Mesh(new THREE.BoxGeometry(W + 0.1, HT, D + 0.1),
+      new THREE.MeshPhongMaterial({ color: 0xbfd4ff, transparent: true, opacity: 0.06, depthWrite: false, side: THREE.BackSide }));
+    glass.position.y = HT / 2;
+    g.add(glass);
+    world.add(g);
+    wellGroup = g;
+  }
+
+  const boxGeo = new THREE.BoxGeometry(0.94, 0.94, 0.94);
+  const edgeGeo = new THREE.EdgesGeometry(boxGeo);
+  const blockMats = COLORS.map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.35, metalness: 0.05 }));
+  const edgeMats = COLORS.map(c => new THREE.LineBasicMaterial({ color: new THREE.Color(c).multiplyScalar(0.5) }));
+  const ghostMats = COLORS.map(c => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.18, depthWrite: false }));
+  const ghostEdgeMats = COLORS.map(c => new THREE.LineBasicMaterial({ color: c, transparent: true, opacity: 0.7 }));
+
+  const landedGroup = new THREE.Group(), activeGroup = new THREE.Group(), ghostGroup = new THREE.Group();
+  world.add(landedGroup, activeGroup, ghostGroup);
+
+  function makeBlock(ci, ghost) {
+    const m = new THREE.Mesh(boxGeo, ghost ? ghostMats[ci] : blockMats[ci]);
+    m.add(new THREE.LineSegments(edgeGeo, ghost ? ghostEdgeMats[ci] : edgeMats[ci]));
+    return m;
+  }
+  function clearGroup(g) { while (g.children.length) g.remove(g.children[0]); }
+
+  // ---------- 盤面 ----------
+  let grid, piece, nextShape, score, level, lines, over, paused, fallT;
+  const idx = (x, y, z) => x + W * (z + D * y);
+  const inBox = (x, y, z) => x >= 0 && x < W && z >= 0 && z < D && y >= 0;
+
+  function cellsOf(pc, pos = pc.pos, cells = pc.cells) { return cells.map(c => [c[0] + pos[0], c[1] + pos[1], c[2] + pos[2]]); }
+  function valid(cells, pos) {
+    for (const c of cells) {
+      const x = c[0] + pos[0], y = c[1] + pos[1], z = c[2] + pos[2];
+      if (!inBox(x, y, z)) return false;
+      if (y < HT && grid[idx(x, y, z)] >= 0) return false;
+    }
+    return true;
+  }
+  function rot1(c, a) {
+    const [x, y, z] = c;
+    if (a === 0) return [x, -z, y];
+    if (a === 1) return [z, y, -x];
+    return [-y, x, z];
+  }
+  function rotated(cells, a, s) {
+    let r = cells;
+    const times = s > 0 ? 1 : 3;
+    for (let i = 0; i < times; i++) r = r.map(c => rot1(c, a));
+    return r;
+  }
+
+  function randShape() { return diff.shapes[(Math.random() * diff.shapes.length) | 0]; }
+  function spawn() {
+    const si = nextShape; nextShape = randShape(); drawNext();
+    const cells = SHAPES[si].map(c => c.slice());
+    const mn = [0, 1, 2].map(a => Math.min(...cells.map(c => c[a])));
+    const mx = [0, 1, 2].map(a => Math.max(...cells.map(c => c[a])));
+    const pos = [
+      Math.floor((W - (mx[0] - mn[0] + 1)) / 2) - mn[0],
+      HT - 1 - mx[1],
+      Math.floor((D - (mx[2] - mn[2] + 1)) / 2) - mn[2]];
+    piece = { cells, pos, color: si };
+    if (!valid(cells, pos)) { gameOver(); return; }
+    fallT = 0;
+    refreshActive();
+  }
+
+  function tryMove(dx, dy, dz) {
+    if (!piece || over || paused) return false;
+    const np = [piece.pos[0] + dx, piece.pos[1] + dy, piece.pos[2] + dz];
+    if (valid(piece.cells, np)) { piece.pos = np; refreshActive(); return true; }
+    return false;
+  }
+  const KICKS = [[0,0,0],[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,1,0],[2,0,0],[-2,0,0],[0,0,2],[0,0,-2],[0,-1,0]];
+  function tryRotate(a, s) {
+    if (!piece || over || paused) return;
+    const nc = rotated(piece.cells, a, s);
+    for (const k of KICKS) {
+      const np = [piece.pos[0] + k[0], piece.pos[1] + k[1], piece.pos[2] + k[2]];
+      if (valid(nc, np)) { piece.cells = nc; piece.pos = np; refreshActive(); return; }
+    }
+  }
+  function dropY() {
+    let y = piece.pos[1];
+    while (valid(piece.cells, [piece.pos[0], y - 1, piece.pos[2]])) y--;
+    return y;
+  }
+  function hardDrop() {
+    if (!piece || over || paused) return;
+    const y = dropY();
+    score += (piece.pos[1] - y) * 2;
+    piece.pos[1] = y;
+    lock();
+  }
+
+  function lock() {
+    for (const [x, y, z] of cellsOf(piece)) {
+      if (y >= HT) { gameOver(); return; }
+      grid[idx(x, y, z)] = piece.color;
+    }
+    piece = null;
+    // 段消し
+    let cleared = 0;
+    for (let y = 0; y < HT; y++) {
+      let full = true;
+      for (let i = 0; i < W * D && full; i++) if (grid[y * W * D + i] < 0) full = false;
+      if (full) {
+        grid.copyWithin(y * W * D, (y + 1) * W * D);
+        grid.fill(-1, (HT - 1) * W * D);
+        cleared++; y--;
+      }
+    }
+    if (cleared) {
+      const pts = [0, 100, 300, 600, 1000][Math.min(4, cleared)] * level;
+      score += pts; lines += cleared;
+      level = 1 + Math.floor(lines / diff.per);
+      flash(cleared >= 2 ? `${cleared}段消し！ +${pts}` : `+${pts}`);
+      if (navigator.vibrate) try { navigator.vibrate(cleared >= 2 ? [40, 30, 80] : 40); } catch (e) {}
+    }
+    refreshLanded();
+    updateHud();
+    spawn();
+  }
+
+  function refreshLanded() {
+    clearGroup(landedGroup);
+    for (let y = 0; y < HT; y++) for (let z = 0; z < D; z++) for (let x = 0; x < W; x++) {
+      const c = grid[idx(x, y, z)];
+      if (c < 0) continue;
+      const m = makeBlock(c, false); m.position.copy(toWorld(x, y, z)); landedGroup.add(m);
+    }
+  }
+  function refreshActive() {
+    clearGroup(activeGroup); clearGroup(ghostGroup);
+    if (!piece) return;
+    for (const [x, y, z] of cellsOf(piece)) {
+      const m = makeBlock(piece.color, false); m.position.copy(toWorld(x, y, z)); activeGroup.add(m);
+    }
+    const gy = dropY();
+    if (gy !== piece.pos[1]) {
+      for (const [x, y, z] of cellsOf(piece, [piece.pos[0], gy, piece.pos[2]])) {
+        const m = makeBlock(piece.color, true); m.position.copy(toWorld(x, y, z)); ghostGroup.add(m);
+      }
+    }
+  }
+
+  // NEXT 表示（2D の簡易アイソメ）
+  const nctx = document.getElementById('nextCv').getContext('2d');
+  function drawNext() {
+    nctx.clearRect(0, 0, 128, 128);
+    const cells = SHAPES[nextShape];
+    const col = '#' + COLORS[nextShape].toString(16).padStart(6, '0');
+    const s = 16;
+    const iso = (x, y, z) => [64 + (x - z) * s * 0.87, 70 + (x + z) * s * 0.5 - y * s];
+    const sorted = cells.slice().sort((a, b) => (a[0] + a[2] - a[1] * 0.01) - (b[0] + b[2] - b[1] * 0.01) || a[1] - b[1]);
+    for (const [x, y, z] of sorted) {
+      const p = (dx, dy, dz) => iso(x + dx, y + dy, z + dz);
+      const face = (pts, shade) => {
+        nctx.beginPath(); pts.forEach((q, i) => i ? nctx.lineTo(...q) : nctx.moveTo(...q)); nctx.closePath();
+        nctx.fillStyle = col; nctx.fill();
+        nctx.fillStyle = `rgba(0,0,0,${shade})`; nctx.fill();
+        nctx.strokeStyle = 'rgba(0,0,0,.45)'; nctx.lineWidth = 1.2; nctx.stroke();
+      };
+      face([p(0, 1, 0), p(1, 1, 0), p(1, 1, 1), p(0, 1, 1)], 0);
+      face([p(1, 1, 0), p(1, 0, 0), p(1, 0, 1), p(1, 1, 1)], 0.25);
+      face([p(0, 1, 1), p(1, 1, 1), p(1, 0, 1), p(0, 0, 1)], 0.12);
+    }
+  }
+
+  // ---------- HUD ----------
+  const $ = id => document.getElementById(id);
+  function updateHud() { $('score').textContent = score; $('level').textContent = level; $('lines').textContent = lines; }
+  let msgTimer = 0;
+  function flash(t) {
+    const m = $('msg'); m.textContent = t; m.classList.add('show');
+    clearTimeout(msgTimer); msgTimer = setTimeout(() => m.classList.remove('show'), 900);
+  }
+
+  function newGame() {
+    W = D = diff.w; HT = diff.h;
+    buildWell(); placeCamera();
+    grid = new Int8Array(W * D * HT).fill(-1);
+    score = 0; level = 1; lines = 0; over = false; paused = false;
+    nextShape = randShape();
+    refreshLanded(); updateHud();
+    $('overOv').classList.add('hidden');
+    spawn();
+  }
+  function gameOver() {
+    over = true; piece = null; refreshActive();
+    const bk = 'block3dBest_' + diff.label;
+    let best = 0; try { best = parseInt(localStorage.getItem(bk), 10) || 0; } catch (e) {}
+    if (score > best) { best = score; try { localStorage.setItem(bk, String(score)); } catch (e) {} }
+    $('finalScore').textContent = `SCORE ${score}`;
+    $('bestScore').textContent = `${diff.label} のベスト ${best}`;
+    $('overOv').classList.remove('hidden');
+  }
+
+  // ---------- カメラ（ドラッグで視点を回す） ----------
+  let yaw = 0.38, pitch = 0.95;
+  const target = new THREE.Vector3(0, HT * 0.36, 0);
+  function placeCamera() {
+    camera.aspect = innerWidth / innerHeight;
+    target.y = HT * 0.36;
+    const r = Math.max(HT * 1.35, 1.9 * W / Math.min(1, camera.aspect));
+    camera.position.set(
+      target.x + r * Math.sin(yaw) * Math.cos(pitch),
+      target.y + r * Math.sin(pitch),
+      target.z + r * Math.cos(yaw) * Math.cos(pitch));
+    camera.lookAt(target);
+    camera.updateProjectionMatrix();
+  }
+  buildWell();
+  placeCamera();
+  addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); placeCamera(); });
+
+  let dragging = false, lx = 0, ly = 0;
+  const cv = renderer.domElement;
+  cv.addEventListener('pointerdown', e => { dragging = true; lx = e.clientX; ly = e.clientY; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    yaw -= (e.clientX - lx) * 0.008;
+    pitch = Math.min(1.45, Math.max(0.25, pitch + (e.clientY - ly) * 0.006));
+    lx = e.clientX; ly = e.clientY; placeCamera();
+  });
+  cv.addEventListener('pointerup', () => dragging = false);
+  cv.addEventListener('pointercancel', () => dragging = false);
+
+  // 画面の向き → 盤面の軸（いちばん近い軸にスナップ）
+  function screenToGrid(rx, fy) {
+    const wx = rx * Math.cos(yaw) - fy * Math.sin(yaw);
+    const wz = -rx * Math.sin(yaw) - fy * Math.cos(yaw);
+    if (Math.abs(wx) >= Math.abs(wz)) return [Math.sign(wx), 0, 0];
+    return [0, 0, Math.sign(wz)];
+  }
+  function moveScreen(rx, fy) { const [dx, , dz] = screenToGrid(rx, fy); tryMove(dx, 0, dz); }
+  function axisNear(rx, fy) { const g = screenToGrid(rx, fy); return g[0] ? [0, g[0]] : [2, g[2]]; }
+  function rotate(kind) {
+    if (kind === 'yaw') tryRotate(1, 1);
+    else if (kind === 'yawr') tryRotate(1, -1);
+    else if (kind === 'pitch') { const [a, s] = axisNear(1, 0); tryRotate(a, s); }   // 画面の横軸まわり＝前後に倒す
+    else if (kind === 'roll') { const [a, s] = axisNear(0, 1); tryRotate(a, s); }    // 画面の奥行き軸まわり＝左右に倒す
+  }
+
+  // ---------- ボタン ----------
+  document.querySelectorAll('[data-mv]').forEach(b => {
+    const [rx, fy] = b.dataset.mv.split(',').map(Number);
+    let t1 = 0, t2 = 0;
+    const stop = () => { clearTimeout(t1); clearInterval(t2); };
+    b.addEventListener('pointerdown', e => {
+      e.preventDefault(); moveScreen(rx, fy);
+      t1 = setTimeout(() => { t2 = setInterval(() => moveScreen(rx, fy), 110); }, 260);
+    });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => b.addEventListener(ev, stop));
+  });
+  document.querySelectorAll('[data-rot]').forEach(b => b.addEventListener('pointerdown', e => { e.preventDefault(); rotate(b.dataset.rot); }));
+  $('dropBtn').addEventListener('pointerdown', e => { e.preventDefault(); hardDrop(); });
+
+  addEventListener('keydown', e => {
+    if ($('startOv').classList.contains('hidden') === false) return;
+    const k = e.key;
+    if (k === 'ArrowLeft') moveScreen(-1, 0);
+    else if (k === 'ArrowRight') moveScreen(1, 0);
+    else if (k === 'ArrowUp') moveScreen(0, 1);
+    else if (k === 'ArrowDown') moveScreen(0, -1);
+    else if (k === 'q' || k === 'Q') rotate('yaw');
+    else if (k === 'w' || k === 'W') rotate('pitch');
+    else if (k === 'e' || k === 'E') rotate('roll');
+    else if (k === ' ') hardDrop();
+    else if (k === 'p' || k === 'P' || k === 'Escape') togglePause();
+    else return;
+    e.preventDefault();
+  });
+
+  function togglePause() {
+    if (over) return;
+    paused = !paused;
+    $('pauseOv').classList.toggle('hidden', !paused);
+  }
+  $('pauseBtn').addEventListener('click', togglePause);
+  $('resumeBtn').addEventListener('click', togglePause);
+  $('retryBtn').addEventListener('click', newGame);
+  document.addEventListener('visibilitychange', () => { if (document.hidden && !paused && !over && piece) togglePause(); });
+
+  // ---------- 傾きセンサー ----------
+  let tiltOn = false, haveSensor = false, needCal = true;
+  const grav = { x: 0, y: 0 }, neutral = { x: 0, y: 0 };
+  function onOrientation(e) {
+    if (e.beta == null || e.gamma == null) return;
+    haveSensor = true;
+    const b = e.beta * D2R, g = e.gamma * D2R;
+    const gx = Math.sin(g) * Math.cos(b), gy = -Math.sin(b);
+    const angDeg = (screen.orientation && typeof screen.orientation.angle === 'number') ? screen.orientation.angle : (window.orientation || 0);
+    const a = angDeg * D2R, c = Math.cos(a), s = Math.sin(a);
+    grav.x = gx * c - gy * s; grav.y = gx * s + gy * c;
+    if (needCal) { neutral.x = grav.x; neutral.y = grav.y; needCal = false; }
+  }
+  async function enableSensor() {
+    try {
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        const r = await DeviceOrientationEvent.requestPermission();
+        if (r !== 'granted') { $('note').textContent = 'センサーが許可されませんでした。ボタンで遊べます。'; return false; }
+      }
+      window.addEventListener('deviceorientation', onOrientation);
+      return true;
+    } catch (err) { return false; }
+  }
+  function setTilt(on) { tiltOn = on; $('tiltBtn').textContent = on ? '傾き ON' : '傾き OFF'; $('tiltBtn').classList.toggle('on', on); needCal = true; }
+  $('tiltBtn').addEventListener('click', async () => { if (!tiltOn) { await enableSensor(); setTilt(true); } else setTilt(false); });
+  $('calBtn').addEventListener('click', () => { needCal = true; flash('水平をリセット'); });
+
+  // diff.th：これ以上傾けると動き出す（0.24 ≒ 14°）
+  let tiltNext = 0, tiltDir = '';
+  function handleTilt(now) {
+    if (!tiltOn || !haveSensor || !piece || paused || over) return;
+    const tx = grav.x - neutral.x;
+    const ty = grav.y - neutral.y;        // 上端を下げる（奥へ傾ける）と＋
+    let rx = 0, fy = 0, mag = 0;
+    const TH = diff.th;
+    if (Math.abs(tx) > TH && Math.abs(tx) >= Math.abs(ty)) { rx = Math.sign(tx); mag = Math.abs(tx); }
+    else if (Math.abs(ty) > TH) { fy = Math.sign(ty); mag = Math.abs(ty); }
+    const dir = rx + ',' + fy;
+    if (!rx && !fy) { tiltDir = ''; return; }
+    if (dir !== tiltDir) { tiltDir = dir; tiltNext = 0; }
+    if (now >= tiltNext) {
+      moveScreen(rx, fy);
+      const interval = Math.max(120, 450 - (mag - TH) * 900);
+      tiltNext = now + interval;
+    }
+  }
+
+  // ---------- 難易度えらび ----------
+  document.querySelectorAll('.dbtn').forEach(b => b.addEventListener('click', () => {
+    diff = DIFFS[b.dataset.d];
+    document.querySelectorAll('.dbtn').forEach(x => x.classList.toggle('sel', x === b));
+    try { localStorage.setItem('block3dDiff', b.dataset.d); } catch (e) {}
+  }));
+  try { const sd = localStorage.getItem('block3dDiff'); if (sd && DIFFS[sd]) document.querySelector(`.dbtn[data-d="${sd}"]`).click(); } catch (e) {}
+  $('menuBtn').addEventListener('click', () => { $('overOv').classList.add('hidden'); $('startOv').classList.remove('hidden'); });
+
+  // ---------- スタート ----------
+  $('startBtn').addEventListener('click', async () => {
+    const ok = await enableSensor();
+    const mobile = matchMedia('(pointer: coarse)').matches;
+    setTilt(ok && mobile);
+    $('startOv').classList.add('hidden');
+    newGame();
+  });
+
+  // ---------- ループ ----------
+  let last = performance.now();
+  function loop(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if ($('startOv').classList.contains('hidden')) {
+      handleTilt(now);
+      if (piece && !paused && !over) {
+        fallT += dt;
+        const interval = Math.max(diff.minFall, diff.fall - (level - 1) * diff.step);
+        if (fallT >= interval) {
+          fallT = 0;
+          if (!tryMove(0, -1, 0)) lock();
+        }
+      }
+    } else {
+      yaw += dt * 0.25; placeCamera();
+    }
+    renderer.render(scene, camera);
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
